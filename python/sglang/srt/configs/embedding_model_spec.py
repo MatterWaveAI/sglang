@@ -128,6 +128,11 @@ _EMBEDDING_ARCHITECTURES = {
         EmbeddingExecution.ENCODER_ONLY,
         PoolingStrategy.MODEL_DEFINED,
     ),
+    "GRTModel": (
+        "grt_embedding",
+        EmbeddingExecution.DECODER_POOLING,
+        PoolingStrategy.MODEL_DEFINED,
+    ),
     "LlamaEmbeddingModel": (
         "llama_embedding",
         EmbeddingExecution.DECODER_POOLING,
@@ -147,6 +152,7 @@ _EMBEDDING_ARCHITECTURES = {
 
 _CLASSIFICATION_ARCHITECTURES = {
     "BertForSequenceClassification",
+    "GRTForSequenceClassification",
     "LlamaForSequenceClassification",
     "LlamaForSequenceClassificationWithNormal_Weights",
     "Qwen2ForSequenceClassification",

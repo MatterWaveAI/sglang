@@ -11,7 +11,11 @@ import torch
 import torch.nn as nn
 from transformers import PretrainedConfig
 
-from sglang.srt.layers.activation import get_cross_encoder_activation_function
+try:
+    from sglang.srt.layers.activation import get_cross_encoder_activation_function
+except Exception:
+    def get_cross_encoder_activation_function(config: PretrainedConfig) -> nn.Module:
+        return nn.Sigmoid() if getattr(config, "num_labels", 1) == 1 else nn.Identity()
 
 if TYPE_CHECKING:
     from sglang.srt.model_executor.forward_batch_info import ForwardBatch
@@ -21,6 +25,7 @@ class PoolingType(IntEnum):
     LAST = 0
     CLS = 1
     MEAN = 2
+    CIRCULAR = 3
 
 
 @dataclass
@@ -71,6 +76,28 @@ def pool_hidden_states(
         preceding_sums = torch.zeros_like(sums)
         preceding_sums[1:] = cumulative_hidden_states[end_indices[:-1]]
         return (sums - preceding_sums) / prompt_lens.unsqueeze(-1)
+    elif pooling_type == PoolingType.CIRCULAR:
+        prompt_lens = forward_batch.extend_seq_lens
+        end_indices = torch.cumsum(prompt_lens, dim=0) - 1
+        pairs = hidden_states.to(torch.float32).unflatten(-1, (-1, 2))
+        radii = pairs.norm(dim=-1, keepdim=True)
+        directions = pairs / torch.clamp(radii, min=1e-9)
+        dir_flat = directions.flatten(-2)
+        cum_dir = torch.cumsum(dir_flat, dim=0)
+        dir_sums = cum_dir[end_indices]
+        dir_prev = torch.zeros_like(dir_sums)
+        dir_prev[1:] = cum_dir[end_indices[:-1]]
+        dir_mean = ((dir_sums - dir_prev) / prompt_lens.unsqueeze(-1)).unflatten(-1, (-1, 2))
+
+        rad_flat = radii.squeeze(-1)
+        cum_rad = torch.cumsum(rad_flat, dim=0)
+        rad_sums = cum_rad[end_indices]
+        rad_prev = torch.zeros_like(rad_sums)
+        rad_prev[1:] = cum_rad[end_indices[:-1]]
+        rad_mean = ((rad_sums - rad_prev) / prompt_lens.unsqueeze(-1)).unsqueeze(-1)
+
+        pooled = (dir_mean * rad_mean).flatten(-2)
+        return pooled.to(hidden_states.dtype)
     else:
         raise ValueError(f"Unsupported pooling type: {pooling_type}")
 
